@@ -102,11 +102,26 @@ def custom_openapi():
             "bearerFormat": "JWT"
         }
     }
+    
+    # Define actual public routes that do not require credentials
+    public_routes = {
+        "/health",
+        "/metrics",
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/auth/verify-email",
+        "/api/v1/auth/password-reset/request",
+        "/api/v1/auth/password-reset/confirm",
+        "/api/v1/auth/oauth/google/authorize",
+        "/api/v1/auth/oauth/github/authorize",
+        "/api/v1/auth/oauth/keycloak/callback",
+        "/api/v1/auth/oauth/google/callback",
+        "/api/v1/auth/oauth/github/callback",
+    }
+    
     for path_name, path in openapi_schema["paths"].items():
-        if path_name in ["/health", "/metrics"] or "auth" in path_name:
-            # Skip security lock for auth registration/login routes & health/metrics
-            if "me" not in path_name:
-                continue
+        if path_name in public_routes:
+            continue
         for method in path.values():
             method["security"] = [{"BearerAuth": []}]
     app.openapi_schema = openapi_schema
