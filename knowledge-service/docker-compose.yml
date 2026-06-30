@@ -1,0 +1,14 @@
+name: nexus-knowledge-service
+services:
+  knowledge-service:
+    build: {context: ., dockerfile: Dockerfile, target: development}
+    container_name: nexus-knowledge
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./src:/app/src:ro
+    ports: ["8007:8007"]
+    networks: [kafka-docker_default]
+
+networks:
+  kafka-docker_default: {external: true}

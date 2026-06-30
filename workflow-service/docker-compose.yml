@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  workflow-service:
+    build:
+      context: .
+      target: development
+    ports:
+      - "8004:8004"
+    env_file: .env
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      workflow-postgres:
+        condition: service_healthy
+    networks:
+      - kafka-docker_default
+      - nexus-net
+
+  workflow-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus
+      POSTGRES_DB: nexus_workflows
+    ports:
+      - "5443:5432"
+    volumes:
+      - workflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_workflows"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kafka-docker_default
+
+volumes:
+  workflow_pgdata:
+
+networks:
+  kafka-docker_default:
+    external: true
+  nexus-net:
+    external: true

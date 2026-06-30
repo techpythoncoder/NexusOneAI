@@ -1,0 +1,9 @@
+postgres:5432:*:nexus:nexus_secret_2024
+nexus-analytics-db:5432:*:nexus:nexus_secret_2024
+nexus-audit-db:5432:*:nexus:nexus_secret_2024
+nexus-chat-db:5432:*:nexus:nexus_secret_2024
+nexus-search-db:5432:*:nexus:nexus_secret_2024
+nexus-ai-db:5432:*:nexus:nexus_secret_2024
+notification-service-notification-postgres-1:5432:*:nexus:nexus
+nexus-project-service-project-postgres-1:5432:*:nexus:nexus_secret_2024
+workflow-service-workflow-postgres-1:5432:*:nexus:nexus

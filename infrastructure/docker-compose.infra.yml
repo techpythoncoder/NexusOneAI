@@ -1,0 +1,415 @@
+name: nexusone-infra
+
+# =============================================================================
+# NexusOne AI — Infrastructure Services
+# =============================================================================
+# Run:  make infra-up
+# Stop: make infra-down
+#
+# REUSING from STAFIO (already running, no duplicate containers):
+#   kafka     → kafka-docker_default network  → hostname: kafka:9092
+#   redis     → kafka-docker_default network  → hostname: redis:6379
+#
+# OWNED by NexusOne (separate instances):
+#   postgres  → port 5433  (5432 is STAFIO's video-analytics-db — don't touch)
+#   mongodb   → port 27017
+#   opensearch→ port 9200
+#   minio     → port 9002 / 9003  (9000/9001 taken by video-analytics-minio)
+#
+# UI TOOLS (browser-accessible):
+#   pgAdmin        → http://localhost:5050
+#   Mongo Express  → http://localhost:8081
+#   Kafka UI       → http://localhost:8085  (already running from STAFIO)
+#   OpenSearch UI  → http://localhost:5601
+#   MinIO Console  → http://localhost:9003
+#   Grafana        → http://localhost:3001
+#   Jaeger UI      → http://localhost:16686
+#   MailHog        → http://localhost:8025
+# =============================================================================
+
+services:
+
+  # ──────────────────────────────────────────────────────────────
+  # PostgreSQL 16 — NexusOne's own instance
+  # Port: 5433 (5432 is already used by video-analytics-db)
+  #
+  # Each microservice gets its own logical database inside this instance:
+  #   nexus_auth        → auth-service
+  #   nexus_org         → organization-service
+  #   nexus_projects    → project-service
+  #   nexus_workflows   → workflow-service
+  #   nexus_search      → search metadata
+  #   nexus_notifications → notification-service
+  #   nexus_analytics   → analytics-service
+  #
+  # The init script runs once on first startup and creates all these DBs.
+  # ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Comma-separated list of extra databases to create on first boot
+      POSTGRES_MULTIPLE_DATABASES: >-
+        ${AUTH_DB},${ORG_DB},${PROJECT_DB},${WORKFLOW_DB},${SEARCH_DB},${NOTIFICATION_DB},${ANALYTICS_DB}
+    volumes:
+      - nexus_postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+    ports:
+      - "5433:5432"   # Host 5433 → container 5432 (5432 is STAFIO's)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # pgAdmin 4 — Web UI for PostgreSQL
+  # Access: http://localhost:5050
+  # Login:  admin@nexusone.ai / admin
+  #
+  # What you can do here:
+  #   - Browse tables, rows, indexes
+  #   - Run SQL queries
+  #   - View query execution plans
+  #   - Monitor DB connections and locks
+  #   - View migration history (alembic_version table)
+  # ──────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: nexus-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@nexusone.ai
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"       # Single-user mode (no login screen)
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      # Pre-configure the NexusOne server connection so you don't have to add it manually
+      - ./infrastructure/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # MongoDB 7 — Document store
+  # Port: 27017
+  #
+  # Used by:
+  #   chat-service       → chat rooms, messages, threads
+  #   ai-service         → AI conversation history, agent memory
+  #   audit-service      → immutable audit log entries
+  #   knowledge-service  → document chunk metadata
+  # ──────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: nexus-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DB}
+    volumes:
+      - nexus_mongo_data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # Mongo Express — Web UI for MongoDB
+  # Access: http://localhost:8081
+  # Login:  admin / admin
+  #
+  # What you can do here:
+  #   - Browse collections and documents
+  #   - Run queries / aggregations
+  #   - View indexes
+  #   - Insert / edit / delete documents
+  #   - Export collections to JSON/CSV
+  # ──────────────────────────────────────────────────────────────
+  mongo-express:
+    image: mongo-express:latest
+    container_name: nexus-mongo-express
+    restart: unless-stopped
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+    ports:
+      - "8081:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # OpenSearch 2.13 — Hybrid search engine
+  # Port: 9200 (REST API), 9600 (performance analyzer)
+  #
+  # Why OpenSearch instead of Elasticsearch:
+  #   - 100% free (Apache 2.0 license, Elastic changed to SSPL)
+  #   - Same API — code written for ES works with OpenSearch
+  #   - k-NN plugin built-in → vector similarity search
+  #   - BM25 full-text search + dense vector = hybrid search
+  #
+  # Used by:
+  #   search-service     → indexes and queries all entities
+  #   knowledge-service  → stores document embeddings (1024-dim BGE-M3)
+  # ──────────────────────────────────────────────────────────────
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: nexus-opensearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_PASSWORD}
+      plugins.security.ssl.http.enabled: "false"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - nexus_opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -v '\"status\":\"red\"'"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    networks:
+      - nexus-net
+
+  # OpenSearch Dashboards — Visual UI for OpenSearch (like Kibana)
+  # Access: http://localhost:5601
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.13.0
+    container_name: nexus-opensearch-dashboards
+    restart: unless-stopped
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    ports:
+      - "5601:5601"
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # MinIO — S3-compatible object storage
+  # API Port:  9002 (9000 taken by video-analytics-minio)
+  # Console:   http://localhost:9003
+  # Login:     nexus_minio / nexus_minio_2024
+  #
+  # Used for:
+  #   - Uploaded documents (PDFs, DOCX) for knowledge-service
+  #   - User avatar images
+  #   - Exported reports (PDFs, CSVs)
+  #   - AI model artifacts
+  # ──────────────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: nexus-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - nexus_minio_data:/data
+    ports:
+      - "9002:9000"   # S3 API  (9000 taken by video-analytics-minio)
+      - "9003:9001"   # Console (9001 taken)
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # Keycloak 24 — OAuth2 / OIDC / SSO
+  # Access: http://localhost:8082
+  # Admin:  admin / admin
+  #
+  # Handles:
+  #   - Google OAuth2 login  (using your GOOGLE_CLIENT_ID)
+  #   - GitHub OAuth2 login  (using your GITHUB_CLIENT_ID)
+  #   - OIDC tokens issued to auth-service
+  #   - Future SSO for enterprise customers
+  #
+  # auth-service acts as the bridge:
+  #   User → auth-service → Keycloak → Google/GitHub → back to auth-service
+  #   auth-service then issues its own JWT (not Keycloak's) to the client
+  # ──────────────────────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: nexus-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_SCHEMA: keycloak
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_PORT: "8082"
+    volumes:
+      - ./infrastructure/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    ports:
+      - "8082:8082"   # 8080 taken by video-analytics-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/realms/master || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # MailHog — Local email capture
+  # SMTP: localhost:1025  (services send email here)
+  # UI:   http://localhost:8025  (view all sent emails)
+  #
+  # In dev, no emails are actually sent. MailHog captures them all.
+  # You can view registration emails, invite emails, password resets, etc.
+  # ──────────────────────────────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: nexus-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # Jaeger — Distributed Tracing
+  # UI: http://localhost:16686
+  #
+  # HOW TRACING WORKS:
+  #   1. Every FastAPI service instruments with OpenTelemetry SDK
+  #   2. Each incoming request gets a unique Trace ID (propagated via headers)
+  #   3. Each service adds a "span" (start time, end time, metadata)
+  #   4. Spans are sent to Jaeger via OTLP gRPC (port 4317)
+  #   5. In Jaeger UI you search by Trace ID and see the full call waterfall:
+  #
+  #   nginx (2ms) → auth-service (5ms) → postgres (1ms)
+  #                                    → kafka publish (0.5ms)
+  #              → project-service (12ms) → postgres (3ms)
+  #
+  # This tells you exactly WHERE latency lives and WHERE errors occur.
+  # ──────────────────────────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: nexus-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver (services send spans here)
+      - "4318:4318"    # OTLP HTTP receiver
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # Prometheus — Metrics collection
+  # Scrapes /metrics from all services every 15s.
+  # Stores time-series: request counts, error rates, latencies, DB pool, etc.
+  # ──────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nexus-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - nexus_prometheus_data:/prometheus
+    ports:
+      - "9091:9090"   # Prometheus UI (9090 might conflict)
+    networks:
+      - nexus-net
+
+  # ──────────────────────────────────────────────────────────────
+  # Grafana — Metrics Dashboards
+  # Access: http://localhost:3001
+  # Login:  admin / admin
+  #
+  # Pre-configured datasource points to Prometheus automatically.
+  # Import community dashboards by ID (e.g., FastAPI dashboard: 14528)
+  # ──────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nexus-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - nexus_grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+    ports:
+      - "3001:3000"   # 3000 may be used by Next.js
+    depends_on:
+      - prometheus
+    networks:
+      - nexus-net
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  nexus-net:
+    driver: bridge
+    name: nexus-net
+
+  # Attach to STAFIO's Kafka network so NexusOne containers can reach:
+  #   kafka:9092   (Kafka broker)
+  #   redis:6379   (Redis, also on this network)
+  kafka-docker_default:
+    external: true
+    name: kafka-docker_default
+
+# =============================================================================
+# Volumes — named volumes persist data across container restarts
+# =============================================================================
+volumes:
+  nexus_postgres_data:
+  nexus_mongo_data:
+  nexus_opensearch_data:
+  nexus_minio_data:
+  nexus_prometheus_data:
+  nexus_grafana_data:
+  pgadmin_data:

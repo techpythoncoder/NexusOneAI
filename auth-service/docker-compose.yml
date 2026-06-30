@@ -1,0 +1,59 @@
+name: nexus-auth-service
+
+# Push to: github.com/your-org/auth-service
+# Run standalone: docker compose up -d
+
+services:
+
+  auth-service:
+    build:
+      context: .            # This folder only — no external deps
+      dockerfile: Dockerfile
+      target: development
+    container_name: nexus-auth
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@auth-postgres:5432/${AUTH_DB}
+    volumes:
+      - ./src:/app/src:ro   # Hot-reload
+    ports:
+      - "8001:8001"
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+    networks:
+      - auth-internal
+      - kafka-docker_default
+
+  auth-postgres:
+    image: postgres:16-alpine
+    container_name: nexus-auth-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${AUTH_DB}
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5440:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${AUTH_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - auth-internal
+
+networks:
+  auth-internal:
+    driver: bridge
+    name: nexus-auth-internal
+  kafka-docker_default:
+    external: true
+    name: kafka-docker_default
+
+volumes:
+  auth_postgres_data:
+    name: nexus_auth_postgres_data

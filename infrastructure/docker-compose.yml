@@ -1,0 +1,213 @@
+name: nexusone
+
+# =============================================================================
+# NexusOne AI — Full Stack Local Dev
+# Run from: NexusOneAI/infrastructure/   →   make up
+#
+# Each service builds from its OWN folder (no shared build context).
+# Services are 100% self-contained — no shared library dependency.
+# =============================================================================
+
+services:
+
+  api-gateway:
+    build:
+      context: ../api-gateway
+      dockerfile: Dockerfile
+    container_name: nexus-nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ../api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+      - organization-service
+    networks:
+      - nexus-net
+
+  auth-service:
+    build:
+      context: ../auth-service      # Service's own folder — fully self-contained
+      dockerfile: Dockerfile
+      target: development
+    container_name: nexus-auth
+    restart: unless-stopped
+    env_file: ../auth-service/.env.example
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_secret_2024}@postgres:5432/${AUTH_DB:-nexus_auth}
+    volumes:
+      - ../auth-service/src:/app/src:ro
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nexus-net
+      - kafka-docker_default
+
+  organization-service:
+    build:
+      context: ../organization-service
+      dockerfile: Dockerfile
+      target: development
+    container_name: nexus-org
+    restart: unless-stopped
+    env_file: ../organization-service/.env.example
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_secret_2024}@postgres:5432/${ORG_DB:-nexus_org}
+    volumes:
+      - ../organization-service/src:/app/src:ro
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nexus-net
+      - kafka-docker_default
+
+  # Shared Postgres for full-stack mode
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus_secret_2024}
+      POSTGRES_DB: ${POSTGRES_DB:-nexusone}
+      POSTGRES_MULTIPLE_DATABASES: "nexus_auth,nexus_org,nexus_projects,nexus_workflows,nexus_search,nexus_notifications,nexus_analytics"
+    volumes:
+      - nexus_postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexus}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nexus-net
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: nexus-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@nexusone.ai
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin/pgpassfile:/pgpassfile:ro
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nexus-net
+
+  mongodb:
+    image: mongo:7
+    container_name: nexus-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-nexus}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-nexus_mongo_2024}
+      MONGO_INITDB_DATABASE: nexusone
+    volumes:
+      - nexus_mongo_data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nexus-net
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: nexus-mongo-express
+    restart: unless-stopped
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER:-nexus}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD:-nexus_mongo_2024}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-nexus}:${MONGO_PASSWORD:-nexus_mongo_2024}@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+    ports:
+      - "8081:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - nexus-net
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: nexus-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - nexus-net
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: nexus-keycloak
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/nexus_keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER:-nexus}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-nexus_secret_2024}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY: edge
+    command: ["start-dev", "--import-realm"]
+    volumes:
+      - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    ports:
+      - "8180:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nexus-net
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: nexus-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - nexus-net
+
+networks:
+  nexus-net:
+    driver: bridge
+    name: nexus-net
+  kafka-docker_default:
+    external: true
+    name: kafka-docker_default
+
+volumes:
+  nexus_postgres_data:
+  nexus_mongo_data:
+  pgadmin_data:

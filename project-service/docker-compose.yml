@@ -1,0 +1,42 @@
+name: nexus-project-service
+
+services:
+  project-service:
+    build:
+      context: .
+      target: development
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    depends_on:
+      - project-postgres
+    networks:
+      - project-internal
+      - kafka-docker_default
+    volumes:
+      - ./src:/app/src
+    restart: unless-stopped
+
+  project-postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5442:5432"
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus_secret_2024
+      POSTGRES_DB: nexus_projects
+    volumes:
+      - project-postgres-data:/var/lib/postgresql/data
+    networks:
+      - project-internal
+    restart: unless-stopped
+
+networks:
+  project-internal:
+    driver: bridge
+  kafka-docker_default:
+    external: true
+
+volumes:
+  project-postgres-data:

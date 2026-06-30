@@ -1,0 +1,31 @@
+name: nexus-chat-service
+services:
+  chat-service:
+    build: {context: ., dockerfile: Dockerfile, target: development}
+    container_name: nexus-chat
+    restart: unless-stopped
+    env_file: .env
+    volumes: [./src:/app/src:ro]
+    ports: ["8008:8008"]
+    depends_on:
+      chat-service-postgres:
+        condition: service_healthy
+    networks: [chat-service-internal, kafka-docker_default, nexus-net]
+  chat-service-postgres:
+    image: postgres:16-alpine
+    container_name: nexus-chat-db
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus_secret_2024
+      POSTGRES_DB: nexus_chat
+    volumes: [chat_service_postgres_data:/var/lib/postgresql/data]
+    ports: ["5447:5432"]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_chat"], interval: 10s, timeout: 5s, retries: 5}
+    networks: [chat-service-internal]
+
+networks:
+  chat-service-internal: {driver: bridge}
+  kafka-docker_default: {external: true}
+  nexus-net: {external: true}
+volumes:
+  chat_service_postgres_data:

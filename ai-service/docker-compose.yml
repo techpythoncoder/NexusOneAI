@@ -1,0 +1,32 @@
+name: nexus-ai-service
+services:
+  ai-service:
+    build: {context: ., dockerfile: Dockerfile, target: development}
+    container_name: nexus-ai
+    restart: unless-stopped
+    env_file: .env
+    volumes: [./src:/app/src:ro]
+    ports: ["8005:8005"]
+    depends_on:
+      ai-postgres:
+        condition: service_healthy
+    networks: [ai-internal, kafka-docker_default, nexus-net]
+
+  ai-postgres:
+    image: postgres:16-alpine
+    container_name: nexus-ai-db
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus_secret_2024
+      POSTGRES_DB: nexus_ai
+    volumes: [ai_postgres_data:/var/lib/postgresql/data]
+    ports: ["5444:5432"]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_ai"], interval: 10s, timeout: 5s, retries: 5}
+    networks: [ai-internal]
+
+networks:
+  ai-internal: {driver: bridge}
+  kafka-docker_default: {external: true}
+  nexus-net: {external: true}
+volumes:
+  ai_postgres_data:

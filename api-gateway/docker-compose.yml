@@ -1,0 +1,24 @@
+name: nexus-api-gateway
+
+# Push this folder to: github.com/your-org/api-gateway
+# Run standalone: docker compose up -d
+# Exposes port 8000 — routes all /api/v1/* traffic to the right service
+
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexus-nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - nexus-net
+
+networks:
+  nexus-net:
+    external: true
+    name: nexus-net

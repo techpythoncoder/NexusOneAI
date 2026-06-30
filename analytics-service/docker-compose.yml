@@ -1,0 +1,35 @@
+name: nexus-analytics-service
+services:
+  analytics-service:
+    build: {context: ., dockerfile: Dockerfile, target: development}
+    container_name: nexus-analytics
+    restart: unless-stopped
+    env_file: .env
+    volumes: [./src:/app/src:ro]
+    ports: ["8012:8010"]
+    depends_on:
+      analytics-service-postgres:
+        condition: service_healthy
+    networks:
+      analytics-service-internal:
+      kafka-docker_default:
+      nexus-net:
+        aliases: [analytics-service]
+  analytics-service-postgres:
+    image: postgres:16-alpine
+    container_name: nexus-analytics-db
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus_secret_2024
+      POSTGRES_DB: nexus_analytics
+    volumes: [analytics_service_postgres_data:/var/lib/postgresql/data]
+    ports: ["5449:5432"]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_analytics"], interval: 10s, timeout: 5s, retries: 5}
+    networks: [analytics-service-internal]
+
+networks:
+  analytics-service-internal: {driver: bridge}
+  kafka-docker_default: {external: true}
+  nexus-net: {external: true}
+volumes:
+  analytics_service_postgres_data:

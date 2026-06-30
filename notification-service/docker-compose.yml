@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  notification-service:
+    build:
+      context: .
+      target: development
+    ports:
+      - "8009:8009"
+    env_file: .env
+    command: ["uvicorn", "notification_service.main:app", "--host", "0.0.0.0", "--port", "8009"]
+    volumes:
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    depends_on:
+      notification-postgres:
+        condition: service_healthy
+    networks:
+      - kafka-docker_default
+      - nexus-net
+
+  notification-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus
+      POSTGRES_DB: nexus_notifications
+    ports:
+      - "5448:5432"
+    volumes:
+      - notification_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_notifications"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kafka-docker_default
+
+volumes:
+  notification_pgdata:
+
+networks:
+  kafka-docker_default:
+    external: true
+  nexus-net:
+    external: true
+    name: nexus-net

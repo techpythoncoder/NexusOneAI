@@ -1,0 +1,83 @@
+name: Monorepo CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  test:
+    name: Test ${{ matrix.service }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - auth-service
+          - project-service
+          - organization-service
+          - workflow-service
+          - notification-service
+          - chat-service
+          - search-service
+          - analytics-service
+          - audit-service
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus_secret_2024
+          POSTGRES_DB: nexus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready -U nexus -d nexus_test
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Python packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.service }}-${{ hashFiles(format('{0}/pyproject.toml', matrix.service)) }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.service }}-
+
+      - name: Install dependencies
+        run: |
+          cd ${{ matrix.service }}
+          python -m venv .venv
+          .venv/bin/pip install uv
+          if grep -q "optional-dependencies" pyproject.toml; then
+            .venv/bin/uv pip install -r pyproject.toml --extra dev
+          else
+            .venv/bin/uv pip install -r pyproject.toml
+          fi
+          .venv/bin/uv pip install pytest pytest-asyncio pytest-cov
+
+      - name: Run Tests
+        env:
+          PYTHONPATH: src
+          DATABASE_URL: postgresql+asyncpg://nexus:nexus_secret_2024@localhost:5432/nexus_test
+          JWT_SECRET_KEY: nexusone-super-secret-jwt-key-change-in-production-min-32-chars
+        run: |
+          cd ${{ matrix.service }}
+          .venv/bin/pytest --cov=src -v

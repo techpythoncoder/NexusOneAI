@@ -1,0 +1,94 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "NexusOne PostgreSQL",
+      "Group": "NexusOne",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "nexusone",
+      "Username": "nexus",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "2": {
+      "Name": "Analytics DB",
+      "Group": "Services",
+      "Host": "nexus-analytics-db",
+      "Port": 5432,
+      "MaintenanceDB": "nexus_analytics",
+      "Username": "nexus",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "3": {
+      "Name": "Audit DB",
+      "Group": "Services",
+      "Host": "nexus-audit-db",
+      "Port": 5432,
+      "MaintenanceDB": "nexus_audit",
+      "Username": "nexus",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "4": {
+      "Name": "Chat DB",
+      "Group": "Services",
+      "Host": "nexus-chat-db",
+      "Port": 5432,
+      "MaintenanceDB": "nexus_chat",
+      "Username": "nexus",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "5": {
+      "Name": "Search DB",
+      "Group": "Services",
+      "Host": "nexus-search-db",
+      "Port": 5432,
+      "MaintenanceDB": "nexus_search",
+      "Username": "nexus",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "6": {
+      "Name": "AI DB",
+      "Group": "Services",
+      "Host": "nexus-ai-db",
+      "Port": 5432,
+      "MaintenanceDB": "nexus_ai",
+      "Username": "nexus",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "7": {
+      "Name": "Notification DB",
+      "Group": "Services",
+      "Host": "notification-service-notification-postgres-1",
+      "Port": 5432,
+      "MaintenanceDB": "nexus_notifications",
+      "Username": "nexus",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "8": {
+      "Name": "Projects DB",
+      "Group": "Services",
+      "Host": "nexus-project-service-project-postgres-1",
+      "Port": 5432,
+      "MaintenanceDB": "nexus_projects",
+      "Username": "nexus",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    },
+    "9": {
+      "Name": "Workflows DB",
+      "Group": "Services",
+      "Host": "workflow-service-workflow-postgres-1",
+      "Port": 5432,
+      "MaintenanceDB": "nexus_workflows",
+      "Username": "nexus",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpassfile"
+    }
+  }
+}

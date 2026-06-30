@@ -1,0 +1,54 @@
+{
+  "realm": "nexusone",
+  "displayName": "NexusOne AI",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "nexusone-backend",
+      "name": "NexusOne Backend",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "nexusone-keycloak-secret-2024",
+      "redirectUris": [
+        "http://localhost:8000/*",
+        "http://localhost:8001/*"
+      ],
+      "webOrigins": ["http://localhost:3000", "http://localhost:8000"],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "displayName": "Google",
+      "providerId": "google",
+      "enabled": true,
+      "config": {
+        "clientId": "your-google-client-id.apps.googleusercontent.com",
+        "clientSecret": "your-google-client-secret",
+        "syncMode": "IMPORT"
+      }
+    },
+    {
+      "alias": "github",
+      "displayName": "GitHub",
+      "providerId": "github",
+      "enabled": true,
+      "config": {
+        "clientId": "Ov23liEEcjRpFelBwNl6",
+        "clientSecret": "c3d850d9483b36a2b68baca471c2af6b1015c99b",
+        "syncMode": "IMPORT"
+      }
+    }
+  ]
+}
