@@ -121,6 +121,12 @@ export default function DeveloperPortalPage() {
     return `fetch("${baseUrl}${endpoint}", {\n  method: "${method}",\n  headers: {\n    "Authorization": "Bearer ${tokenPlaceholder}",\n    "Content-Type": "application/json"\n  }${bodyParam}\n})\n.then(res => res.json())\n.then(data => console.log(data));`;
   };
 
+  const getDocsUrl = (port: number) => {
+    if (typeof window === "undefined") return "";
+    const hostname = window.location.hostname;
+    return `http://${hostname}:${port}/docs`;
+  };
+
   // 1. Loading State
   if (isMembershipLoading) {
     return (
@@ -206,14 +212,20 @@ export default function DeveloperPortalPage() {
                 <Activity className="h-3.5 w-3.5" /> Live Sandbox
               </div>
               <h2 className="text-2xl font-bold tracking-tight text-foreground">NexusOne API Developer Portal</h2>
-              <p className="text-muted-foreground text-sm max-w-2xl leading-relaxed">
+              <p className="text-muted-foreground text-sm max-w-xl leading-relaxed">
                 Build custom integrations, sync task pipelines, and trigger workflow runs. 
                 Your active Organization ID is: <code className="bg-muted border px-2 py-0.5 rounded font-mono text-xs text-foreground font-bold">{org?.id || "default"}</code>
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" className="h-9 gap-2 text-xs font-semibold" onClick={() => window.open("/docs", "_blank")}>
-                Swagger docs <ExternalLink className="h-4 w-4" />
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <Button size="sm" variant="outline" className="h-9 gap-2 text-xs font-semibold" onClick={() => window.open(getDocsUrl(8003), "_blank")}>
+                Projects Docs (8003) <ExternalLink className="h-4 w-4" />
+              </Button>
+              <Button size="sm" variant="outline" className="h-9 gap-2 text-xs font-semibold" onClick={() => window.open(getDocsUrl(8001), "_blank")}>
+                Auth Docs (8001) <ExternalLink className="h-4 w-4" />
+              </Button>
+              <Button size="sm" variant="outline" className="h-9 gap-2 text-xs font-semibold" onClick={() => window.open(getDocsUrl(8009), "_blank")}>
+                Workflows Docs (8009) <ExternalLink className="h-4 w-4" />
               </Button>
             </div>
           </div>
