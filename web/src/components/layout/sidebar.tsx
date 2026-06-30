@@ -174,15 +174,17 @@ export function Sidebar({ mode }: { mode?: "admin" | "member" }) {
 
       {/* User footer */}
       <div className="border-t border-border p-3 space-y-1">
-        <Link href="/developer">
-          <div className={cn(
-            "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all",
-            pathname === "/developer" ? "bg-muted text-foreground font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-          )}>
-            <Code className="h-4 w-4" />
-            Developer Portal
-          </div>
-        </Link>
+        {membership?.role === "owner" && (
+          <Link href="/developer">
+            <div className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all",
+              pathname === "/developer" ? "bg-muted text-foreground font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}>
+              <Code className="h-4 w-4" />
+              Developer Portal
+            </div>
+          </Link>
+        )}
         <Link href="/settings">
           <div className={cn(
             "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all",
