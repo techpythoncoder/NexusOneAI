@@ -228,6 +228,7 @@ async def switch_org(
 async def validate_token(
     response: Response,
     authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Called internally by nginx auth_request before every protected route.
@@ -235,23 +236,58 @@ async def validate_token(
     Returns 200 with user info injected as response headers, OR 401.
     Nginx reads X-User-ID, X-Org-ID, X-User-Role, X-User-Email from the
     response headers and forwards them to the upstream service.
-
-    This endpoint is intentionally fast — no DB call, just JWT decode + Redis check.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise AuthError("Missing authorization header")
 
     token = authorization.removeprefix("Bearer ")
-    payload = await jwt_service.decode_access_token(token)
 
-    # Inject user info as response headers — nginx reads these
-    response.headers["X-User-ID"]        = payload["sub"]
-    response.headers["X-Org-ID"]         = payload.get("org_id") or ""
-    response.headers["X-User-Role"]      = payload.get("role", "member")
-    response.headers["X-User-Email"]     = payload.get("email", "")
-    response.headers["X-User-Full-Name"] = payload.get("full_name", "")
+    if token.startswith("nx_"):
+        import hashlib
+        computed_hash = hashlib.sha256(token.encode()).hexdigest()
 
-    return {"valid": True}
+        from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
+        from auth_service.models.api_key import APIKey
+
+        result = await db.execute(
+            select(APIKey)
+            .options(joinedload(APIKey.user))
+            .where(APIKey.key_hash == computed_hash, APIKey.is_active == True)
+        )
+        api_key = result.scalar_one_or_none()
+
+        if not api_key:
+            raise AuthError("Invalid API key")
+
+        if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
+            raise AuthError("API key expired")
+
+        # Update last_used_at
+        api_key.last_used_at = datetime.now(timezone.utc)
+        await db.commit()
+
+        user = api_key.user
+        response.headers["X-User-ID"]        = str(api_key.user_id)
+        response.headers["X-Org-ID"]         = str(api_key.organization_id)
+        response.headers["X-User-Role"]      = "member"
+        response.headers["X-User-Email"]     = user.email if user else ""
+        response.headers["X-User-Full-Name"] = user.full_name if user else "API User"
+        response.headers["X-User-Scopes"]    = api_key.scopes or ""
+
+        return {"valid": True}
+    else:
+        payload = await jwt_service.decode_access_token(token)
+
+        # Inject user info as response headers — nginx reads these
+        response.headers["X-User-ID"]        = payload["sub"]
+        response.headers["X-Org-ID"]         = payload.get("org_id") or ""
+        response.headers["X-User-Role"]      = payload.get("role", "member")
+        response.headers["X-User-Email"]     = payload.get("email", "")
+        response.headers["X-User-Full-Name"] = payload.get("full_name", "")
+        response.headers["X-User-Scopes"]    = ""
+
+        return {"valid": True}
 
 
 # ── Password Reset ────────────────────────────────────────────────────────────
