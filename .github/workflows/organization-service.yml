@@ -1,0 +1,71 @@
+name: organization-service CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'organization-service/**'
+      - '.github/workflows/organization-service.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'organization-service/**'
+      - '.github/workflows/organization-service.yml'
+
+jobs:
+  test:
+    name: Test organization-service
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus_secret_2024
+          POSTGRES_DB: nexus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready -U nexus -d nexus_test
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Python packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-organization-service-${{ hashFiles('organization-service/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-organization-service-
+
+      - name: Install dependencies
+        run: |
+          cd organization-service
+          python -m venv .venv
+          .venv/bin/pip install uv
+          if grep -q "optional-dependencies" pyproject.toml; then
+            .venv/bin/uv pip install -r pyproject.toml --extra dev
+          else
+            .venv/bin/uv pip install -r pyproject.toml
+          fi
+          .venv/bin/uv pip install pytest pytest-asyncio pytest-cov
+
+      - name: Run Tests
+        env:
+          PYTHONPATH: src
+          DATABASE_URL: postgresql+asyncpg://nexus:nexus_secret_2024@localhost:5432/nexus_test
+          JWT_SECRET_KEY: nexusone-super-secret-jwt-key-change-in-production-min-32-chars
+        run: |
+          cd organization-service
+          .venv/bin/pytest --cov=src -v

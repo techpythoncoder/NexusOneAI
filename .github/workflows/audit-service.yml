@@ -1,33 +1,21 @@
-name: Monorepo CI Pipeline
+name: audit-service CI
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
+    paths:
+      - 'audit-service/**'
+      - '.github/workflows/audit-service.yml'
   pull_request:
-    branches:
-      - main
-      - master
+    branches: [main, master]
+    paths:
+      - 'audit-service/**'
+      - '.github/workflows/audit-service.yml'
 
 jobs:
   test:
-    name: Test ${{ matrix.service }}
+    name: Test audit-service
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        service:
-          - auth-service
-          - project-service
-          - organization-service
-          - workflow-service
-          - notification-service
-          - chat-service
-          - search-service
-          - analytics-service
-          - audit-service
 
     services:
       postgres:
@@ -57,13 +45,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.service }}-${{ hashFiles(format('{0}/pyproject.toml', matrix.service)) }}
+          key: ${{ runner.os }}-pip-audit-service-${{ hashFiles('audit-service/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.service }}-
+            ${{ runner.os }}-pip-audit-service-
 
       - name: Install dependencies
         run: |
-          cd ${{ matrix.service }}
+          cd audit-service
           python -m venv .venv
           .venv/bin/pip install uv
           if grep -q "optional-dependencies" pyproject.toml; then
@@ -79,5 +67,5 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://nexus:nexus_secret_2024@localhost:5432/nexus_test
           JWT_SECRET_KEY: nexusone-super-secret-jwt-key-change-in-production-min-32-chars
         run: |
-          cd ${{ matrix.service }}
+          cd audit-service
           .venv/bin/pytest --cov=src -v
