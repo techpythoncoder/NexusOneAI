@@ -62,6 +62,36 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 Instrumentator().instrument(app).expose(app)
 app.include_router(router)
 
+# Custom OpenAPI schema to display Bearer Authorization lock in Swagger UI
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
+    )
+    openapi_schema["components"] = openapi_schema.get("components", {})
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+    for path_name, path in openapi_schema["paths"].items():
+        if path_name in ["/health", "/metrics"]:
+            continue
+        for method in path.values():
+            method["security"] = [{"BearerAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
+
 @app.get("/health")
 async def health(): return {"status": "ok", "service": settings.SERVICE_NAME}
 
